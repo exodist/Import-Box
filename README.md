@@ -1,0 +1,225 @@
+# NAME
+
+Import::Box - Box up imports into an object or unified function.
+
+# DESCRIPTION
+
+This package lets you box up imported functions in either a unified function,
+or an object. This allows you access to functions you would normally import,
+but now you can do so without cluttering your namespace.
+
+This module can be helpful in situations where you need to use exported
+functions from different modules where the functions have identical names. For
+instance [Moose](https://metacpan.org/pod/Moose) exports `meta()`, [Test2::Tools::Compare](https://metacpan.org/pod/Test2::Tools::Compare) also exports
+`meta()`, in such a simple case you can just rename the import, but in cases
+where there are many conflicts this can get tedious.
+
+# SYNOPSIS
+
+## BOX FUNCTION
+
+You can process imports when you use [Import::Box](https://metacpan.org/pod/Import::Box), this will give you a
+function that gives you access to the functions.
+
+    use Import::Box -as => 'dd', 'Data::Dumper' => ['Dumper'];
+
+    # Dumper $thing1 and $thing2, dd() itself is not dumped
+    print dd->Dumper($thing1, $thing2);
+
+    # Tell dd to call Dumper() on $thing1 and $thing2, dd() itself is not dumped
+    dd Dumper => ($thing, $thing2);
+
+## BOX INSTANCE
+
+You can completely avoid any subs being imported into your namespace and go the
+completely OO route:
+
+    use Import::Box;
+
+    my $dd = Import::Box->new('Data::Dumper' => ['Dumper']);
+
+    # Dump $thing1 and $thing2. $dd is not dumped
+    print $dd->Dumper($thing1, $thing2);
+
+    # Indirect object notation also works (but please do not do this)
+    Dumper $dd($thing1, $thing2)
+
+# SUBCLASSING
+
+Subclassing is a way to create shortcuts for common boxing patterns.
+
+    package T2;
+    use parent 'Import::Box';
+
+    sub __DEFAULT_AS { 't2' }
+    sub __DEFAULT_NS { 'Test2::Tools' }
+
+The subclass above creates a shortcut for importing Test2::Tools::\* packages:
+
+    use T2 'Basic', 'Compare' => [qw/is/];
+
+    # The 't2' function was specified for us, no need for '-as' in the
+    # arguments above.
+
+    t2 ok => (1, "everything is ok");
+
+    t2->is('a', 'a', "these letters are both identical");
+
+    t2->done_testing;
+
+## SUBCLASS METHODS
+
+- $name = $class->\_\_DEFAULT\_AS()
+
+    This lets you specify a default argument for `-as`, that is the name of the
+    sub that gives you access to your imports.
+
+- $prefix = $class->\_\_DEFAULT\_NS()
+
+    This lets you specify a prefix to add to any module argument. The default can
+    be bypassed using the '+' prefix in your import:
+
+        use T2 '+Not::In::Test2::Tools::Tool';
+
+# IMPORT ARGUMENTS
+
+These are all valid when importing [Import::Box](https://metacpan.org/pod/Import::Box). Arguments prefixed with a
+dash (`-`) are not allowed when calling import() as an instance method.
+
+- -as => $NAME
+
+    Specify a function name that will be added to your namespace. You may import
+    multiple times with the same '-as' value to append new imports to an existing
+    box.
+
+        use Import::Box -as => 'foo', 'Data::Dumper';
+        use Import::Box -as => 'foo', 'Scalar::Util';
+
+        foo()->Dumper(...);
+        foo()->blessed(...);
+
+- -from => $PACKAGE
+
+    This lets you import a box function from another package:
+
+        package Other::Package;
+        use Import::Box -as => 'foo', 'Data::Dumper';
+
+        package main;
+
+        # This will bring in 'foo' from Other::Package.
+        use Import::Box -as => 'foo', -from => 'Other::Package';
+
+    In this case '-as' specifies BOTH what the sub will be called, and which sub to
+    get from Other::Package.
+
+- -no\_scope => $BOOL
+
+    This can be used to prevent compile-time effects from your imports, for instance:
+
+        use Import::Box 'strict';
+        # Strict is turned on
+
+    With the arg:
+
+        use Import::Box -no_scope => 1, 'strict';
+        # strict settings are not changed
+
+    It is worth noting that the same thing can be achieved this way:
+
+        { use Import::Box 'strict'; }
+        # strict settings not changed
+
+- MODULE\_NAME
+- MODULE\_NAME => \\@IMPORT\_LIST
+
+    Any argument not prefixed with a dash will be considered a module name. A
+    module name can optionally be followed by an arrayref of import arguments. If
+    no arrayref is specified then the default import will happen.
+
+    You may specify any number of modules for import:
+
+        use Import::Box(
+            'Data::Dumper',
+            'Carp' => [ qw/croak confess/ ],
+            ...
+        );
+
+    or OO via `new()`
+
+        my $foo = Import::Box->new(
+            'Data::Dumper',
+            'Carp' => [ qw/croak confess/ ],
+            ...
+        );
+
+    or via `->import` on an instance or box function:
+
+        $foo->import(...);
+        foo()->import(...);
+
+# CONSTRUCTORS
+
+- $box = Import::Box->new($MODULE1, $MODULE2 => \\@import\_args)
+
+    This will create a completely new box with the specified imports.
+
+- $box = Import::Box->box($MODULE)
+
+    This will box up an existing namespace. This will not load the specified
+    module, you must load it yourself with `require` if necessary.
+
+        require Data::Dumper;
+        my $box = Import::Box->box('Data::Dumper);
+
+    **Note:** Normally a box is made by importing the modules into a generated
+    package name, when you use this constructor you do not create a new package,
+    instead the box directly touches the symbol table for the specified package.
+
+    The following would import all the subs from `Carp` into the `Data::Dumper`
+    namespace, you probably do not want this!
+
+        $box->import('Carp');
+
+# PREDEFINED METHODS (you cannot access imports under these names)
+
+- import($MODULE1, $MODULE2 => \\@import\_args)
+
+    `import()` is always going to be the [Import::Box](https://metacpan.org/pod/Import::Box) import method, it will
+    never delegate to the imported packages.
+
+- isa($class)
+
+    `isa()` will never be delegated.
+
+- can($name)
+
+    `can()` will never be delegated. When called on a class this will return
+    methods that exist on [Import::Box](https://metacpan.org/pod/Import::Box) or your subclass. When called on an
+    instance this will only return subs that have been imported.
+
+- DESTROY()
+
+    `DESTROY()` is a magic special case, never delegated.
+
+- AUTOLOAD(...)
+
+    `AUTOLOAD()` is used internally as an implementation detail, never delegated.
+
+# SOURCE
+
+The source code repository for Import::Box can be found at
+[http://github.com/exodist/Import-Box](http://github.com/exodist/Import-Box).
+
+# AUTHORS
+
+- Chad Granum <exodist@cpan.org>
+
+# COPYRIGHT
+
+Copyright 2016 Chad Granum <exodist7@gmail.com>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See [http://dev.perl.org/licenses/](http://dev.perl.org/licenses/)
