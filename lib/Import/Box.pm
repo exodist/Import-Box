@@ -2,7 +2,7 @@ package Import::Box;
 use strict;
 use warnings;
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 use Scalar::Util();
 use Carp();
